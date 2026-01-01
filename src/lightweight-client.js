@@ -9,7 +9,7 @@ import chalk from 'chalk';
 import {
   NotionTranscriptConfigValue,
   NotionTranscriptContextValue, NotionTranscriptItem, NotionDebugOverrides,
-  NotionRequestBody, ChoiceDelta, Choice, ChatCompletionChunk, NotionTranscriptItemByuser
+  NotionRequestBody, ChoiceDelta, Choice, ChatCompletionChunk, NotionTranscriptItemByuser, Usage
 } from './models.js';
 import { proxyPool } from './ProxyPool.js';
 import { proxyServer } from './ProxyServer.js';
@@ -419,7 +419,12 @@ async function fetchNotionResponse(chunkQueue, notionRequestBody, headers, notio
     // 创建流读取器
     const reader = response.body;
     let buffer = '';
-    
+
+    // 跟踪已发送内容的长度（用于计算增量）
+    let lastThinkingLength = 0;
+    let lastTextLength = 0;
+    let usageData = null;
+
     // 处理数据块
     reader.on('data', (chunk) => {
       try {
@@ -429,43 +434,92 @@ async function fetchNotionResponse(chunkQueue, notionRequestBody, headers, notio
           logger.info(`已连接Notion API`);
           clearTimeout(timeoutId);  // 清除超时计时器
         }
-        
+
         // 解码数据
         const text = chunk.toString('utf8');
         buffer += text;
-        
+
         // 按行分割并处理完整的JSON对象
         const lines = buffer.split('\n');
         buffer = lines.pop() || ''; // 保留最后一行（可能不完整）
-        
+
         for (const line of lines) {
           if (!line.trim()) continue;
-          
+
           try {
             const jsonData = JSON.parse(line);
-            
-            // 提取内容
-            if (jsonData?.type === "markdown-chat" && typeof jsonData?.value === "string") {
+
+            // 新格式: agent-inference，value 是数组
+            if (jsonData?.type === "agent-inference" && Array.isArray(jsonData?.value)) {
+              // 保存 usage 数据（最后一个包含 finishedAt 的会有完整信息）
+              if (jsonData.inputTokens !== undefined) {
+                usageData = {
+                  prompt_tokens: jsonData.inputTokens,
+                  completion_tokens: jsonData.outputTokens,
+                  total_tokens: (jsonData.inputTokens || 0) + (jsonData.outputTokens || 0),
+                  cached_tokens_read: jsonData.cachedTokensRead,
+                  cached_tokens_created: jsonData.cachedTokensCreated
+                };
+              }
+
+              // 遍历 value 数组，处理 thinking 和 text
+              for (const item of jsonData.value) {
+                if (item?.type === "thinking" && typeof item?.content === "string") {
+                  // 计算增量
+                  const fullContent = item.content;
+                  if (fullContent.length > lastThinkingLength) {
+                    const deltaContent = fullContent.substring(lastThinkingLength);
+                    lastThinkingLength = fullContent.length;
+
+                    // 发送 thinking 增量
+                    const thinkingChunk = new ChatCompletionChunk({
+                      choices: [
+                        new Choice({
+                          delta: new ChoiceDelta({ reasoning_content: deltaContent }),
+                          finish_reason: null
+                        })
+                      ]
+                    });
+                    chunkQueue.write(`data: ${JSON.stringify(thinkingChunk)}\n\n`);
+                  }
+                } else if (item?.type === "text" && typeof item?.content === "string") {
+                  // 计算增量
+                  const fullContent = item.content;
+                  if (fullContent.length > lastTextLength) {
+                    const deltaContent = fullContent.substring(lastTextLength);
+                    lastTextLength = fullContent.length;
+
+                    // 发送 text 增量
+                    const textChunk = new ChatCompletionChunk({
+                      choices: [
+                        new Choice({
+                          delta: new ChoiceDelta({ content: deltaContent }),
+                          finish_reason: null
+                        })
+                      ]
+                    });
+                    chunkQueue.write(`data: ${JSON.stringify(textChunk)}\n\n`);
+                  }
+                }
+              }
+            }
+            // 旧格式: markdown-chat，value 是字符串
+            else if (jsonData?.type === "markdown-chat" && typeof jsonData?.value === "string") {
               const content = jsonData.value;
-              if (!content) continue;
-              
-              // 创建OpenAI格式的块
-              const chunk = new ChatCompletionChunk({
-                choices: [
-                  new Choice({
-                    delta: new ChoiceDelta({ content }),
-                    finish_reason: null
-                  })
-                ]
-              });
-              
-              // 添加到队列
-              const dataStr = `data: ${JSON.stringify(chunk)}\n\n`;
-              chunkQueue.write(dataStr);
+              if (content) {
+                // 创建OpenAI格式的块
+                const textChunk = new ChatCompletionChunk({
+                  choices: [
+                    new Choice({
+                      delta: new ChoiceDelta({ content }),
+                      finish_reason: null
+                    })
+                  ]
+                });
+                chunkQueue.write(`data: ${JSON.stringify(textChunk)}\n\n`);
+              }
             } else if (jsonData?.recordMap) {
               // 忽略recordMap响应
-            } else {
-              // 忽略其他类型响应
             }
           } catch (jsonError) {
             logger.error(`解析JSON出错: ${jsonError}`);
@@ -504,14 +558,15 @@ async function fetchNotionResponse(chunkQueue, notionRequestBody, headers, notio
           chunkQueue.write(`data: ${JSON.stringify(noContentChunk)}\n\n`);
         }
         
-        // 创建结束块
+        // 创建结束块（包含 usage 信息）
         const endChunk = new ChatCompletionChunk({
           choices: [
             new Choice({
-              delta: new ChoiceDelta({ content: null }),
+              delta: new ChoiceDelta({}),
               finish_reason: "stop"
             })
-          ]
+          ],
+          usage: usageData ? new Usage(usageData) : null
         });
         
         // 添加到队列

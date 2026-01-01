@@ -153,9 +153,30 @@ export class NotionRequestBody {
 // 输出模型 (OpenAI SSE)
 export class ChoiceDelta {
   constructor({
-    content = null
+    role = null,
+    content = null,
+    reasoning_content = null
   }) {
-    this.content = content;
+    if (role) this.role = role;
+    if (content !== null) this.content = content;
+    if (reasoning_content !== null) this.reasoning_content = reasoning_content;
+  }
+}
+
+// Usage 统计
+export class Usage {
+  constructor({
+    prompt_tokens = null,
+    completion_tokens = null,
+    total_tokens = null,
+    cached_tokens_read = null,
+    cached_tokens_created = null
+  }) {
+    this.prompt_tokens = prompt_tokens;
+    this.completion_tokens = completion_tokens;
+    this.total_tokens = total_tokens;
+    if (cached_tokens_read !== null) this.cached_tokens_read = cached_tokens_read;
+    if (cached_tokens_created !== null) this.cached_tokens_created = cached_tokens_created;
   }
 }
 
@@ -177,13 +198,15 @@ export class ChatCompletionChunk {
     object = "chat.completion.chunk",
     created = Math.floor(Date.now() / 1000),
     model = "notion-proxy",
-    choices
+    choices,
+    usage = null
   }) {
     this.id = id;
     this.object = object;
     this.created = created;
     this.model = model;
     this.choices = choices;
+    if (usage) this.usage = usage;
   }
 }
 
