@@ -10,7 +10,7 @@ import {
   NotionTranscriptConfigValue,
   NotionTranscriptContextValue, NotionTranscriptItem, NotionDebugOverrides,
   NotionRequestBody, ChoiceDelta, Choice, ChatCompletionChunk, NotionTranscriptItemByuser, Usage,
-  generateCustomId
+  generateThreadId, generateUserMessageId, FIXED_CONFIG_ID, FIXED_CONTEXT_ID
 } from './models.js';
 import { proxyPool } from './ProxyPool.js';
 import { proxyServer } from './ProxyServer.js';
@@ -72,12 +72,12 @@ process.on('exit', () => {
 });
 
 // ThreadId 标记格式（HTML 注释，大多数客户端不显示）
-// 格式: <!-- ntc:threadId|configId|contextId|datetime -->
+// 格式: <!-- ntc:threadId|datetime -->
 const THREAD_CONTEXT_PREFIX = '\n\n<!-- ntc:';
 const THREAD_CONTEXT_SUFFIX = ' -->';
-const THREAD_CONTEXT_REGEX = /<!-- ntc:([^|]+)\|([^|]+)\|([^|]+)\|([^ ]+) -->/;
+const THREAD_CONTEXT_REGEX = /<!-- ntc:([^|]+)\|([^ ]+) -->/;
 
-// 从消息中提取 thread context (threadId, configId, contextId, datetime)
+// 从消息中提取 thread context (threadId, datetime)
 function extractThreadContext(messages) {
   if (!messages || !Array.isArray(messages)) return null;
 
@@ -94,9 +94,7 @@ function extractThreadContext(messages) {
         if (match) {
           return {
             threadId: match[1],
-            configId: match[2],
-            contextId: match[3],
-            datetime: match[4]
+            datetime: match[2]
           };
         }
       }
@@ -141,9 +139,9 @@ function buildNotionRequest(requestData) {
   const userName = `User${Math.floor(Math.random() * 900) + 100}`;
   const spaceName = `${randomWords[Math.floor(Math.random() * randomWords.length)]} ${Math.floor(Math.random() * 99) + 1}`;
 
-  // 生成或复用 config 和 context 的 id
-  const configId = existingContext?.configId || generateCustomId();
-  const contextId = existingContext?.contextId || generateCustomId();
+  // 使用固定的 config 和 context id
+  const configId = FIXED_CONFIG_ID;
+  const contextId = FIXED_CONTEXT_ID;
   const contextDatetime = existingContext?.datetime || isoString;
 
   // 创建transcript数组
@@ -203,6 +201,7 @@ function buildNotionRequest(requestData) {
 
     if (message.role === "system" || message.role === "user") {
       transcript.push(new NotionTranscriptItemByuser({
+        id: generateUserMessageId(),  // 使用专用的 user 消息 id 生成器
         type: "user",
         value: [[content]],
         userId: currentCookieData.userId,
@@ -219,7 +218,7 @@ function buildNotionRequest(requestData) {
   }
 
   // 第一次请求生成 threadId，后续请求复用
-  const threadId = existingContext?.threadId || generateCustomId();
+  const threadId = existingContext?.threadId || generateThreadId();
 
   // 创建请求体
   const requestBody = new NotionRequestBody({
@@ -248,8 +247,6 @@ function buildNotionRequest(requestData) {
   return {
     body: requestBody,
     isNewThread: isNewThread,
-    configId: configId,
-    contextId: contextId,
     contextDatetime: contextDatetime,
     threadId: threadId
   };
@@ -258,7 +255,7 @@ function buildNotionRequest(requestData) {
 // 流式处理Notion响应
 async function streamNotionResponse(notionRequest) {
   // 解构请求体和上下文信息
-  const { body: notionRequestBody, isNewThread, configId, contextId, contextDatetime, threadId } = notionRequest;
+  const { body: notionRequestBody, isNewThread, contextDatetime, threadId } = notionRequest;
 
   // 确保我们有当前的cookie数据
   if (!currentCookieData) {
@@ -319,7 +316,7 @@ async function streamNotionResponse(notionRequest) {
     currentCookieData.cookie,
     timeoutId,
     isNewThread,
-    { threadId, configId, contextId, contextDatetime }
+    { threadId, contextDatetime }
   ).catch((error) => {
     logger.error(`流处理出错: ${error}`);
     clearTimeout(timeoutId);  // 清除超时计时器
@@ -350,7 +347,7 @@ async function streamNotionResponse(notionRequest) {
 async function fetchNotionResponse(chunkQueue, notionRequestBody, headers, notionApiUrl, notionCookie, timeoutId, isNewThread, contextInfo) {
   let responseReceived = false;
   let dom = null;
-  const { threadId, configId, contextId, contextDatetime } = contextInfo || {};
+  const { threadId, contextDatetime } = contextInfo || {};
   
   try {
     // 创建JSDOM实例模拟浏览器环境
@@ -647,9 +644,9 @@ async function fetchNotionResponse(chunkQueue, notionRequestBody, headers, notio
         }
 
         // 追加 thread context 到响应末尾（隐藏格式，方便后续对话）
-        // 格式: <!-- ntc:threadId|configId|contextId|datetime -->
-        if (threadId && configId && contextId && contextDatetime) {
-          const contextMarker = `${THREAD_CONTEXT_PREFIX}${threadId}|${configId}|${contextId}|${contextDatetime}${THREAD_CONTEXT_SUFFIX}`;
+        // 格式: <!-- ntc:threadId|datetime -->
+        if (threadId && contextDatetime) {
+          const contextMarker = `${THREAD_CONTEXT_PREFIX}${threadId}|${contextDatetime}${THREAD_CONTEXT_SUFFIX}`;
           const contextChunk = new ChatCompletionChunk({
             choices: [
               new Choice({

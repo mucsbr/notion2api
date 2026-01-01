@@ -192,11 +192,6 @@ export class NotionDebugOverrides {
 }
 
 export function generateCustomId() {
-  // 创建固定部分 - 必须以 2db0fca6 开头
-  const prefix1 = '2db0fca6';
-  const prefix2 = '7d69';
-  const prefix5 = '00aa';
-
   // 生成随机十六进制字符
   function randomHex(length) {
     return Array(length).fill(0).map(() =>
@@ -204,13 +199,39 @@ export function generateCustomId() {
     ).join('');
   }
 
-  // 组合所有部分
-  const part3 = '80' + randomHex(2);  // 8xxx
-  const part4 = randomHex(4);        // xxxx
-  const part5 = prefix5 + randomHex(8); // 00aaxxxxxxxx
+  // 通用格式: 2db0fca6-7d69-80xx-xxxx-00aaxxxxxxxx
+  const part3 = '80' + randomHex(2);
+  const part4 = randomHex(4);
+  const part5 = '00aa' + randomHex(8);
 
-  return `${prefix1}-${prefix2}-${part3}-${part4}-${part5}`;
+  return `2db0fca6-7d69-${part3}-${part4}-${part5}`;
 }
+
+// 生成 threadId (前缀固定)
+export function generateThreadId() {
+  function randomHex(length) {
+    return Array(length).fill(0).map(() =>
+      Math.floor(Math.random() * 16).toString(16)
+    ).join('');
+  }
+  return `2db0fca6-7d69-809d-9f04-00aa${randomHex(8)}`;
+}
+
+// 生成 user 消息 id (前缀固定)
+export function generateUserMessageId() {
+  function randomHex(length) {
+    return Array(length).fill(0).map(() =>
+      Math.floor(Math.random() * 16).toString(16)
+    ).join('');
+  }
+  return `2db0fca6-7d69-8047-8f1a-00aa${randomHex(8)}`;
+}
+
+// 固定的 config id
+export const FIXED_CONFIG_ID = '2db0fca6-7d69-801b-a4e7-00aa22c8c22b';
+
+// 固定的 context id
+export const FIXED_CONTEXT_ID = '2db0fca6-7d69-8023-8f0e-00aa50af437b';
 
 export class NotionRequestBody {
   constructor({
