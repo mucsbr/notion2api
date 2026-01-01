@@ -63,7 +63,7 @@ export class NotionTranscriptConfigValue {
     enableSpeculativeSearch = false,
     enableQueryCalendar = false,
     enableQueryMail = false,
-    searchScopes = [{ type: "notion" }],
+    searchScopes = [{ type: "everything" }],
     useWebSearch = true,
     useReadOnlyMode = false,
     writerMode = false,
@@ -192,23 +192,23 @@ export class NotionDebugOverrides {
 }
 
 export function generateCustomId() {
-  // 创建固定部分
-  const prefix1 = '2036702a';
-  const prefix2 = '4d19';
+  // 创建固定部分 - 必须以 2db0fca6 开头
+  const prefix1 = '2db0fca6';
+  const prefix2 = '7d69';
   const prefix5 = '00aa';
-  
+
   // 生成随机十六进制字符
   function randomHex(length) {
-    return Array(length).fill(0).map(() => 
+    return Array(length).fill(0).map(() =>
       Math.floor(Math.random() * 16).toString(16)
     ).join('');
   }
-  
+
   // 组合所有部分
   const part3 = '80' + randomHex(2);  // 8xxx
   const part4 = randomHex(4);        // xxxx
   const part5 = prefix5 + randomHex(8); // 00aaxxxxxxxx
-  
+
   return `${prefix1}-${prefix2}-${part3}-${part4}-${part5}`;
 }
 
