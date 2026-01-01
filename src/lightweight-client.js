@@ -135,26 +135,29 @@ function buildNotionRequest(requestData) {
   // 创建transcript数组
   const transcript = [];
 
-  // 添加配置项
-  transcript.push(new NotionTranscriptItem({
-    type: "config",
-    value: new NotionTranscriptConfigValue({
-      model: requestData.model || "anthropic-sonnet-4"
-    })
-  }));
+  // 只有首次对话才添加配置和上下文
+  if (!existingThreadId) {
+    // 添加配置项
+    transcript.push(new NotionTranscriptItem({
+      type: "config",
+      value: new NotionTranscriptConfigValue({
+        model: requestData.model || "anthropic-sonnet-4"
+      })
+    }));
 
-  // 添加上下文项
-  transcript.push(new NotionTranscriptItem({
-    type: "context",
-    value: new NotionTranscriptContextValue({
-      userId: currentCookieData.userId,
-      spaceId: currentCookieData.spaceId,
-      userName: userName,
-      spaceName: spaceName,
-      spaceViewId: randomUUID(),
-      currentDatetime: isoString
-    })
-  }));
+    // 添加上下文项
+    transcript.push(new NotionTranscriptItem({
+      type: "context",
+      value: new NotionTranscriptContextValue({
+        userId: currentCookieData.userId,
+        spaceId: currentCookieData.spaceId,
+        userName: userName,
+        spaceName: spaceName,
+        spaceViewId: randomUUID(),
+        currentDatetime: isoString
+      })
+    }));
+  }
 
   // 如果有 threadId，只发送最后一条用户消息
   // 如果没有，发送所有消息（首次对话）
