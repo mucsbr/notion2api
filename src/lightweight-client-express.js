@@ -97,10 +97,9 @@ app.get('/v1/models', authenticate, (req, res) => {
   // 返回可用模型列表
   const modelList = {
     data: [
-      { id: "openai-gpt-4.1" },
-      { id: "anthropic-opus-4" },
-      { id: "anthropic-sonnet-4" },
-      { id: "anthropic-sonnet-3.x-stable" }
+      { id: "oatmeal-cookie", displayName: "GPT 5.2"},
+      { id: "apple-danish", displayName: "Claude Opus 4.5"},
+      { id: "gateau-roule", displayName: "GEMINI 3 Pro" }
     ]
   };
   
