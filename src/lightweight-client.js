@@ -243,7 +243,7 @@ function buildNotionRequest(requestData) {
     };
   }
 
-  logger.info(`请求体: ${JSON.stringify(requestBody).substring(0, 500)}...`);
+  logger.info(`请求体: ${JSON.stringify(requestBody, null, 2)}`);
 
   return {
     body: requestBody,
