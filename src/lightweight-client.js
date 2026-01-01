@@ -203,15 +203,19 @@ function buildNotionRequest(requestData) {
   }
 
   // 创建请求体
+  const requestBody = new NotionRequestBody({
+    spaceId: currentCookieData.spaceId,
+    transcript: transcript,
+    threadId: existingThreadId || null,
+    createThread: !existingThreadId,  // 没有 threadId 时创建新线程
+    traceId: randomUUID(),
+    debugOverrides: new NotionDebugOverrides({})
+  });
+
+  logger.info(`请求体: ${JSON.stringify(requestBody).substring(0, 500)}...`);
+
   return {
-    body: new NotionRequestBody({
-      spaceId: currentCookieData.spaceId,
-      transcript: transcript,
-      threadId: existingThreadId || null,
-      createThread: !existingThreadId,  // 没有 threadId 时创建新线程
-      traceId: randomUUID(),
-      debugOverrides: new NotionDebugOverrides({})
-    }),
+    body: requestBody,
     isNewThread: !existingThreadId
   };
 }
@@ -465,6 +469,7 @@ async function fetchNotionResponse(chunkQueue, notionRequestBody, headers, notio
 
         // 解码数据
         const text = chunk.toString('utf8');
+        logger.info(`收到原始数据: ${text.substring(0, 300)}...`);
         buffer += text;
 
         // 按行分割并处理完整的JSON对象
