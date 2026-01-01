@@ -207,17 +207,17 @@ export function generateCustomId() {
   return `2db0fca6-7d69-${part3}-${part4}-${part5}`;
 }
 
-// 生成 threadId (前缀固定)
+// 生成 threadId (前缀固定，最后部分前四位是 00a9)
 export function generateThreadId() {
   function randomHex(length) {
     return Array(length).fill(0).map(() =>
       Math.floor(Math.random() * 16).toString(16)
     ).join('');
   }
-  return `2db0fca6-7d69-809d-9f04-00aa${randomHex(8)}`;
+  return `2db0fca6-7d69-809d-9f04-00a9${randomHex(8)}`;
 }
 
-// 生成 user 消息 id (前缀固定)
+// 生成 user 消息 id (前缀固定，最后部分前四位是 00aa)
 export function generateUserMessageId() {
   function randomHex(length) {
     return Array(length).fill(0).map(() =>
