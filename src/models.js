@@ -220,18 +220,18 @@ export class NotionRequestBody {
     threadId = null,
     createThread = true,
     debugOverrides = new NotionDebugOverrides({}),
-    generateTitle = false,
+    generateTitle = true,
     saveAllThreadOperations = true,
     threadType = "workflow",
-    isPartialTranscript = true,
-    asPatchResponse = true,
+    isPartialTranscript = false,
+    asPatchResponse = false,
     isUserInAnySalesAssistedSpace = false,
     isSpaceSalesAssisted = false
   }) {
     this.traceId = traceId;
     this.spaceId = spaceId;
     this.transcript = transcript;
-    if (threadId) this.threadId = threadId;
+    this.threadId = threadId;  // 始终包含 threadId
     this.createThread = createThread;
     this.debugOverrides = debugOverrides;
     this.generateTitle = generateTitle;
