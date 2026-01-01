@@ -116,6 +116,8 @@ function buildNotionRequest(requestData) {
 
   // 尝试从历史消息中提取 threadId
   const existingThreadId = extractThreadId(requestData.messages);
+  logger.info(`提取到的 threadId: ${existingThreadId || '无 (首次对话)'}`);
+  logger.info(`消息数量: ${requestData.messages?.length || 0}`);
 
   // 当前时间，格式化为带时区的 ISO 字符串
   const now = new Date();
@@ -159,6 +161,8 @@ function buildNotionRequest(requestData) {
   const messagesToSend = existingThreadId
     ? requestData.messages.filter(m => m.role === 'user').slice(-1)
     : requestData.messages;
+
+  logger.info(`实际发送的消息数量: ${messagesToSend.length}, 有threadId: ${!!existingThreadId}`);
 
   for (const message of messagesToSend) {
     let content = message.content;
@@ -473,11 +477,23 @@ async function fetchNotionResponse(chunkQueue, notionRequestBody, headers, notio
           try {
             const jsonData = JSON.parse(line);
 
-            // 调试日志
+            // 调试日志 - 打印所有收到的数据类型
+            logger.info(`收到数据类型: ${jsonData?.type}, 完整数据: ${JSON.stringify(jsonData).substring(0, 200)}...`);
+
+            // 错误处理
             if (jsonData?.type === "error") {
               logger.error(`Notion 返回错误: ${JSON.stringify(jsonData)}`);
-            } else {
-              logger.info(`收到数据类型: ${jsonData?.type}`);
+              // 将错误信息发送给客户端
+              const errorChunk = new ChatCompletionChunk({
+                choices: [
+                  new Choice({
+                    delta: new ChoiceDelta({ content: `[错误] ${jsonData.message || 'Notion API 错误'}` }),
+                    finish_reason: null
+                  })
+                ]
+              });
+              chunkQueue.write(`data: ${JSON.stringify(errorChunk)}\n\n`);
+              continue;
             }
 
             // 新格式: agent-inference，value 是数组
