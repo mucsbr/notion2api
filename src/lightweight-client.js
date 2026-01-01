@@ -230,7 +230,7 @@ function buildNotionRequest(requestData) {
     debugOverrides: new NotionDebugOverrides({}),
     generateTitle: isNewThread,  // 只有新对话才生成标题
     isPartialTranscript: !isNewThread,  // 继续对话时为 true
-    asPatchResponse: !isNewThread  // 继续对话时为 true
+    asPatchResponse: false  // 始终为 false
   });
 
   // 添加 threadParentPointer（仅首次对话）
@@ -489,6 +489,7 @@ async function fetchNotionResponse(chunkQueue, notionRequestBody, headers, notio
     let lastThinkingLength = 0;
     let lastTextLength = 0;
     let usageData = null;
+    let skipUntilReset = false;  // 标记是否跳过直到收到空内容重置
 
     // 处理数据块
     reader.on('data', (chunk) => {
@@ -570,9 +571,17 @@ async function fetchNotionResponse(chunkQueue, notionRequestBody, headers, notio
                 } else if (item?.type === "text" && typeof item?.content === "string") {
                   const fullContent = item.content;
 
-                  // 空内容是重置信号，重置计数器并跳过
+                  // 空内容是重置信号
                   if (fullContent === "") {
                     lastTextLength = 0;
+                    skipUntilReset = false;  // 重置后可以开始发送
+                    continue;
+                  }
+
+                  // 检测是否以 <lang 开头，如果是则跳过直到重置
+                  if (fullContent.startsWith("<lang") || skipUntilReset) {
+                    skipUntilReset = true;
+                    lastTextLength = fullContent.length;  // 更新长度以便后续计算
                     continue;
                   }
 
@@ -581,19 +590,16 @@ async function fetchNotionResponse(chunkQueue, notionRequestBody, headers, notio
                     const deltaContent = fullContent.substring(lastTextLength);
                     lastTextLength = fullContent.length;
 
-                    // 发送 text 增量（过滤掉 <lang.../> 标签）
-                    const filteredContent = deltaContent.replace(/<lang[^>]*\/>/g, '');
-                    if (filteredContent) {
-                      const textChunk = new ChatCompletionChunk({
-                        choices: [
-                          new Choice({
-                            delta: new ChoiceDelta({ content: filteredContent }),
-                            finish_reason: null
-                          })
-                        ]
-                      });
-                      chunkQueue.write(`data: ${JSON.stringify(textChunk)}\n\n`);
-                    }
+                    // 发送 text 增量
+                    const textChunk = new ChatCompletionChunk({
+                      choices: [
+                        new Choice({
+                          delta: new ChoiceDelta({ content: deltaContent }),
+                          finish_reason: null
+                        })
+                      ]
+                    });
+                    chunkQueue.write(`data: ${JSON.stringify(textChunk)}\n\n`);
                   }
                 }
               }
