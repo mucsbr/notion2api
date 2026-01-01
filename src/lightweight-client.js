@@ -450,7 +450,11 @@ async function fetchNotionResponse(chunkQueue, notionRequestBody, headers, notio
             const jsonData = JSON.parse(line);
 
             // 调试日志
-            logger.info(`收到数据类型: ${jsonData?.type}, value类型: ${typeof jsonData?.value}, 是数组: ${Array.isArray(jsonData?.value)}`);
+            if (jsonData?.type === "error") {
+              logger.error(`Notion 返回错误: ${JSON.stringify(jsonData)}`);
+            } else {
+              logger.info(`收到数据类型: ${jsonData?.type}`);
+            }
 
             // 新格式: agent-inference，value 是数组
             if (jsonData?.type === "agent-inference" && Array.isArray(jsonData?.value)) {
