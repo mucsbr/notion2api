@@ -568,22 +568,32 @@ async function fetchNotionResponse(chunkQueue, notionRequestBody, headers, notio
                     chunkQueue.write(`data: ${JSON.stringify(thinkingChunk)}\n\n`);
                   }
                 } else if (item?.type === "text" && typeof item?.content === "string") {
-                  // 计算增量
                   const fullContent = item.content;
+
+                  // 空内容是重置信号，重置计数器并跳过
+                  if (fullContent === "") {
+                    lastTextLength = 0;
+                    continue;
+                  }
+
+                  // 计算增量
                   if (fullContent.length > lastTextLength) {
                     const deltaContent = fullContent.substring(lastTextLength);
                     lastTextLength = fullContent.length;
 
-                    // 发送 text 增量
-                    const textChunk = new ChatCompletionChunk({
-                      choices: [
-                        new Choice({
-                          delta: new ChoiceDelta({ content: deltaContent }),
-                          finish_reason: null
-                        })
-                      ]
-                    });
-                    chunkQueue.write(`data: ${JSON.stringify(textChunk)}\n\n`);
+                    // 发送 text 增量（过滤掉 <lang.../> 标签）
+                    const filteredContent = deltaContent.replace(/<lang[^>]*\/>/g, '');
+                    if (filteredContent) {
+                      const textChunk = new ChatCompletionChunk({
+                        choices: [
+                          new Choice({
+                            delta: new ChoiceDelta({ content: filteredContent }),
+                            finish_reason: null
+                          })
+                        ]
+                      });
+                      chunkQueue.write(`data: ${JSON.stringify(textChunk)}\n\n`);
+                    }
                   }
                 }
               }
