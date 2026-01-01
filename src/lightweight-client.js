@@ -469,7 +469,7 @@ async function fetchNotionResponse(chunkQueue, notionRequestBody, headers, notio
 
         // 解码数据
         const text = chunk.toString('utf8');
-        logger.info(`收到原始数据: ${text.substring(0, 300)}...`);
+        logger.info(`收到原始数据 (${text.length}字符): ${text}`);
         buffer += text;
 
         // 按行分割并处理完整的JSON对象
