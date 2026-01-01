@@ -36,11 +36,89 @@ export class ChatCompletionRequest {
 // Notion 模型
 export class NotionTranscriptConfigValue {
   constructor({
-    type = "markdown-chat",
-    model
+    type = "workflow",
+    model,
+    modelFromUser = true,
+    enableAgentAutomations = false,
+    enableAgentIntegrations = false,
+    enableBackgroundAgents = false,
+    enableCustomAgents = false,
+    enableExperimentalIntegrations = false,
+    enableAgentViewNotificationsTool = false,
+    enableAgentRevertTool = false,
+    enableAgentDiffs = false,
+    enableAgentCreateDbTemplate = false,
+    enableCsvAttachmentSupport = true,
+    enableDatabaseAgents = false,
+    enableAgentThreadTools = false,
+    enableRunAgentTool = false,
+    enableAgentDashboards = false,
+    enableAgentCardCustomization = true,
+    enableSystemPromptAsPage = false,
+    enableUserSessionContext = false,
+    enableComputer = false,
+    enableScriptAgent = false,
+    enableAgentGenerateImage = false,
+    enableAgentTodos = false,
+    enableSpeculativeSearch = false,
+    enableQueryCalendar = false,
+    enableQueryMail = false,
+    searchScopes = [{ type: "notion" }],
+    useWebSearch = true,
+    useReadOnlyMode = false,
+    writerMode = false,
+    isCustomAgent = false,
+    isCustomAgentBuilder = false,
+    useCustomAgentDraft = false,
+    enableUpdatePageV2Tool = true,
+    enableUpdatePageAutofixer = true,
+    enableUpdateAgentV2Tools = true,
+    enableUpdatePageMarkdownTree = false,
+    enableUpdatePageTreeDiff = false,
+    enableUpdatePageOrderUpdates = true,
+    enableUpdatePageTreeDiffMetrics = false
   }) {
     this.type = type;
     this.model = model;
+    this.modelFromUser = modelFromUser;
+    this.enableAgentAutomations = enableAgentAutomations;
+    this.enableAgentIntegrations = enableAgentIntegrations;
+    this.enableBackgroundAgents = enableBackgroundAgents;
+    this.enableCustomAgents = enableCustomAgents;
+    this.enableExperimentalIntegrations = enableExperimentalIntegrations;
+    this.enableAgentViewNotificationsTool = enableAgentViewNotificationsTool;
+    this.enableAgentRevertTool = enableAgentRevertTool;
+    this.enableAgentDiffs = enableAgentDiffs;
+    this.enableAgentCreateDbTemplate = enableAgentCreateDbTemplate;
+    this.enableCsvAttachmentSupport = enableCsvAttachmentSupport;
+    this.enableDatabaseAgents = enableDatabaseAgents;
+    this.enableAgentThreadTools = enableAgentThreadTools;
+    this.enableRunAgentTool = enableRunAgentTool;
+    this.enableAgentDashboards = enableAgentDashboards;
+    this.enableAgentCardCustomization = enableAgentCardCustomization;
+    this.enableSystemPromptAsPage = enableSystemPromptAsPage;
+    this.enableUserSessionContext = enableUserSessionContext;
+    this.enableComputer = enableComputer;
+    this.enableScriptAgent = enableScriptAgent;
+    this.enableAgentGenerateImage = enableAgentGenerateImage;
+    this.enableAgentTodos = enableAgentTodos;
+    this.enableSpeculativeSearch = enableSpeculativeSearch;
+    this.enableQueryCalendar = enableQueryCalendar;
+    this.enableQueryMail = enableQueryMail;
+    this.searchScopes = searchScopes;
+    this.useWebSearch = useWebSearch;
+    this.useReadOnlyMode = useReadOnlyMode;
+    this.writerMode = writerMode;
+    this.isCustomAgent = isCustomAgent;
+    this.isCustomAgentBuilder = isCustomAgentBuilder;
+    this.useCustomAgentDraft = useCustomAgentDraft;
+    this.enableUpdatePageV2Tool = enableUpdatePageV2Tool;
+    this.enableUpdatePageAutofixer = enableUpdatePageAutofixer;
+    this.enableUpdateAgentV2Tools = enableUpdateAgentV2Tools;
+    this.enableUpdatePageMarkdownTree = enableUpdatePageMarkdownTree;
+    this.enableUpdatePageTreeDiff = enableUpdatePageTreeDiff;
+    this.enableUpdatePageOrderUpdates = enableUpdatePageOrderUpdates;
+    this.enableUpdatePageTreeDiffMetrics = enableUpdatePageTreeDiffMetrics;
   }
 }
 
@@ -49,21 +127,23 @@ export class NotionTranscriptContextValue {
   constructor({
     userId,
     spaceId,
-    surface = "home_module",
-    timezone = "America/Los_Angeles",
+    surface = "ai_module",
+    timezone = "Asia/Shanghai",
     userName,
+    userEmail = "",
     spaceName,
     spaceViewId,
     currentDatetime
   }) {
-    this.userId = userId;
-    this.spaceId = spaceId;
-    this.surface = surface;
     this.timezone = timezone;
     this.userName = userName;
+    this.userId = userId;
+    this.userEmail = userEmail;
     this.spaceName = spaceName;
+    this.spaceId = spaceId;
     this.spaceViewId = spaceViewId;
     this.currentDatetime = currentDatetime;
+    this.surface = surface;
   }
 }
 
@@ -99,10 +179,12 @@ export class NotionTranscriptItemByuser {
 
 export class NotionDebugOverrides {
   constructor({
+    emitAgentSearchExtractedResults = true,
     cachedInferences = {},
     annotationInferences = {},
     emitInferences = false
   }) {
+    this.emitAgentSearchExtractedResults = emitAgentSearchExtractedResults;
     this.cachedInferences = cachedInferences;
     this.annotationInferences = annotationInferences;
     this.emitInferences = emitInferences;
@@ -135,18 +217,30 @@ export class NotionRequestBody {
     traceId = randomUUID(),
     spaceId,
     transcript,
-    createThread = false,
+    threadId = null,
+    createThread = true,
     debugOverrides = new NotionDebugOverrides({}),
-    generateTitle = true,
+    generateTitle = false,
     saveAllThreadOperations = true,
+    threadType = "workflow",
+    isPartialTranscript = true,
+    asPatchResponse = true,
+    isUserInAnySalesAssistedSpace = false,
+    isSpaceSalesAssisted = false
   }) {
     this.traceId = traceId;
     this.spaceId = spaceId;
     this.transcript = transcript;
+    if (threadId) this.threadId = threadId;
     this.createThread = createThread;
     this.debugOverrides = debugOverrides;
     this.generateTitle = generateTitle;
     this.saveAllThreadOperations = saveAllThreadOperations;
+    this.threadType = threadType;
+    this.isPartialTranscript = isPartialTranscript;
+    this.asPatchResponse = asPatchResponse;
+    this.isUserInAnySalesAssistedSpace = isUserInAnySalesAssistedSpace;
+    this.isSpaceSalesAssisted = isSpaceSalesAssisted;
   }
 }
 
