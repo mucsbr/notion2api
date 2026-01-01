@@ -1,0 +1,22 @@
+services:
+  notion2api:
+    build: .
+    container_name: notion2api
+    restart: unless-stopped
+    ports:
+      - "7860:7860"
+    environment:
+      - PORT=7860
+      - PROXY_AUTH_TOKEN=${PROXY_AUTH_TOKEN:-default_token}
+      - NOTION_COOKIE=${NOTION_COOKIE}
+      - ENABLE_PROXY_SERVER=${ENABLE_PROXY_SERVER:-true}
+      - PROXY_SERVER_PLATFORM=linux
+    volumes:
+      # Optional: mount cookie file
+      # - ./cookies.txt:/app/cookies.txt:ro
+      - ./proxy_server.log:/app/proxy_server.log
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:7860/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

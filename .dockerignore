@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Cookie files
+cookies.txt
+cookies.json
+
+# Logs
+*.log
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+README.md
+CLAUDE.md
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Unused proxy binaries (keep only linux)
+src/proxy/chrome_proxy_server_windows_amd64.exe
+src/proxy/chrome_proxy_server_android_arm64
