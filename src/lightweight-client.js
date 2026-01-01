@@ -9,7 +9,8 @@ import chalk from 'chalk';
 import {
   NotionTranscriptConfigValue,
   NotionTranscriptContextValue, NotionTranscriptItem, NotionDebugOverrides,
-  NotionRequestBody, ChoiceDelta, Choice, ChatCompletionChunk, NotionTranscriptItemByuser, Usage
+  NotionRequestBody, ChoiceDelta, Choice, ChatCompletionChunk, NotionTranscriptItemByuser, Usage,
+  generateCustomId
 } from './models.js';
 import { proxyPool } from './ProxyPool.js';
 import { proxyServer } from './ProxyServer.js';
@@ -71,15 +72,16 @@ process.on('exit', () => {
 });
 
 // ThreadId 标记格式（HTML 注释，大多数客户端不显示）
-const THREAD_ID_PREFIX = '\n\n<!-- tid:';
-const THREAD_ID_SUFFIX = ' -->';
-const THREAD_ID_REGEX = /<!-- tid:([a-f0-9-]+) -->/;
+// 格式: <!-- ntc:threadId|configId|contextId|datetime -->
+const THREAD_CONTEXT_PREFIX = '\n\n<!-- ntc:';
+const THREAD_CONTEXT_SUFFIX = ' -->';
+const THREAD_CONTEXT_REGEX = /<!-- ntc:([^|]+)\|([^|]+)\|([^|]+)\|([^ ]+) -->/;
 
-// 从消息中提取 threadId
-function extractThreadId(messages) {
+// 从消息中提取 thread context (threadId, configId, contextId, datetime)
+function extractThreadContext(messages) {
   if (!messages || !Array.isArray(messages)) return null;
 
-  // 从最后一条 assistant 消息中提取 threadId
+  // 从最后一条 assistant 消息中提取
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i];
     if (msg.role === 'assistant') {
@@ -88,9 +90,14 @@ function extractThreadId(messages) {
         content = content.map(p => p?.text || '').join('');
       }
       if (typeof content === 'string') {
-        const match = content.match(THREAD_ID_REGEX);
+        const match = content.match(THREAD_CONTEXT_REGEX);
         if (match) {
-          return match[1];
+          return {
+            threadId: match[1],
+            configId: match[2],
+            contextId: match[3],
+            datetime: match[4]
+          };
         }
       }
     }
@@ -98,10 +105,10 @@ function extractThreadId(messages) {
   return null;
 }
 
-// 从内容中移除 threadId 标记
-function stripThreadId(content) {
+// 从内容中移除 thread context 标记
+function stripThreadContext(content) {
   if (typeof content !== 'string') return content;
-  return content.replace(THREAD_ID_REGEX, '').trimEnd();
+  return content.replace(THREAD_CONTEXT_REGEX, '').trimEnd();
 }
 
 // 构建Notion请求
@@ -114,9 +121,11 @@ function buildNotionRequest(requestData) {
     }
   }
 
-  // 尝试从历史消息中提取 threadId
-  const existingThreadId = extractThreadId(requestData.messages);
-  logger.info(`提取到的 threadId: ${existingThreadId || '无 (首次对话)'}`);
+  // 尝试从历史消息中提取 thread context
+  const existingContext = extractThreadContext(requestData.messages);
+  const isNewThread = !existingContext;
+
+  logger.info(`提取到的 context: ${existingContext ? JSON.stringify(existingContext) : '无 (首次对话)'}`);
   logger.info(`消息数量: ${requestData.messages?.length || 0}`);
 
   // 当前时间，格式化为带时区的 ISO 字符串
@@ -132,40 +141,44 @@ function buildNotionRequest(requestData) {
   const userName = `User${Math.floor(Math.random() * 900) + 100}`;
   const spaceName = `${randomWords[Math.floor(Math.random() * randomWords.length)]} ${Math.floor(Math.random() * 99) + 1}`;
 
+  // 生成或复用 config 和 context 的 id
+  const configId = existingContext?.configId || generateCustomId();
+  const contextId = existingContext?.contextId || generateCustomId();
+  const contextDatetime = existingContext?.datetime || isoString;
+
   // 创建transcript数组
   const transcript = [];
 
-  // 只有首次对话才添加配置和上下文
-  if (!existingThreadId) {
-    // 添加配置项
-    transcript.push(new NotionTranscriptItem({
-      type: "config",
-      value: new NotionTranscriptConfigValue({
-        model: requestData.model || "anthropic-sonnet-4"
-      })
-    }));
+  // 添加配置项（使用固定的 configId）
+  transcript.push(new NotionTranscriptItem({
+    id: configId,
+    type: "config",
+    value: new NotionTranscriptConfigValue({
+      model: requestData.model || "anthropic-sonnet-4"
+    })
+  }));
 
-    // 添加上下文项
-    transcript.push(new NotionTranscriptItem({
-      type: "context",
-      value: new NotionTranscriptContextValue({
-        userId: currentCookieData.userId,
-        spaceId: currentCookieData.spaceId,
-        userName: userName,
-        spaceName: spaceName,
-        spaceViewId: randomUUID(),
-        currentDatetime: isoString
-      })
-    }));
-  }
+  // 添加上下文项（使用固定的 contextId 和 datetime）
+  transcript.push(new NotionTranscriptItem({
+    id: contextId,
+    type: "context",
+    value: new NotionTranscriptContextValue({
+      userId: currentCookieData.userId,
+      spaceId: currentCookieData.spaceId,
+      userName: userName,
+      spaceName: spaceName,
+      spaceViewId: randomUUID(),
+      currentDatetime: contextDatetime
+    })
+  }));
 
   // 如果有 threadId，只发送最后一条用户消息
   // 如果没有，发送所有消息（首次对话）
-  const messagesToSend = existingThreadId
+  const messagesToSend = existingContext
     ? requestData.messages.filter(m => m.role === 'user').slice(-1)
     : requestData.messages;
 
-  logger.info(`实际发送的消息数量: ${messagesToSend.length}, 有threadId: ${!!existingThreadId}`);
+  logger.info(`实际发送的消息数量: ${messagesToSend.length}, 新对话: ${isNewThread}`);
 
   for (const message of messagesToSend) {
     let content = message.content;
@@ -185,8 +198,8 @@ function buildNotionRequest(requestData) {
       content = "";
     }
 
-    // 移除 threadId 标记
-    content = stripThreadId(content);
+    // 移除 thread context 标记
+    content = stripThreadContext(content);
 
     if (message.role === "system" || message.role === "user") {
       transcript.push(new NotionTranscriptItemByuser({
@@ -205,28 +218,47 @@ function buildNotionRequest(requestData) {
     }
   }
 
+  // 第一次请求生成 threadId，后续请求复用
+  const threadId = existingContext?.threadId || generateCustomId();
+
   // 创建请求体
   const requestBody = new NotionRequestBody({
     spaceId: currentCookieData.spaceId,
     transcript: transcript,
-    threadId: existingThreadId || null,
-    createThread: !existingThreadId,  // 没有 threadId 时创建新线程
+    threadId: threadId,
+    createThread: isNewThread,
     traceId: randomUUID(),
-    debugOverrides: new NotionDebugOverrides({})
+    debugOverrides: new NotionDebugOverrides({}),
+    generateTitle: isNewThread,  // 只有新对话才生成标题
+    isPartialTranscript: !isNewThread,  // 继续对话时为 true
+    asPatchResponse: !isNewThread  // 继续对话时为 true
   });
+
+  // 添加 threadParentPointer（仅首次对话）
+  if (isNewThread) {
+    requestBody.threadParentPointer = {
+      table: "space",
+      id: currentCookieData.spaceId,
+      spaceId: currentCookieData.spaceId
+    };
+  }
 
   logger.info(`请求体: ${JSON.stringify(requestBody).substring(0, 500)}...`);
 
   return {
     body: requestBody,
-    isNewThread: !existingThreadId
+    isNewThread: isNewThread,
+    configId: configId,
+    contextId: contextId,
+    contextDatetime: contextDatetime,
+    threadId: threadId
   };
 }
 
 // 流式处理Notion响应
 async function streamNotionResponse(notionRequest) {
-  // 解构请求体和新线程标志
-  const { body: notionRequestBody, isNewThread } = notionRequest;
+  // 解构请求体和上下文信息
+  const { body: notionRequestBody, isNewThread, configId, contextId, contextDatetime, threadId } = notionRequest;
 
   // 确保我们有当前的cookie数据
   if (!currentCookieData) {
@@ -286,7 +318,8 @@ async function streamNotionResponse(notionRequest) {
     NOTION_API_URL,
     currentCookieData.cookie,
     timeoutId,
-    isNewThread
+    isNewThread,
+    { threadId, configId, contextId, contextDatetime }
   ).catch((error) => {
     logger.error(`流处理出错: ${error}`);
     clearTimeout(timeoutId);  // 清除超时计时器
@@ -314,10 +347,10 @@ async function streamNotionResponse(notionRequest) {
 }
 
 // 使用fetch调用Notion API并处理流式响应
-async function fetchNotionResponse(chunkQueue, notionRequestBody, headers, notionApiUrl, notionCookie, timeoutId, isNewThread) {
+async function fetchNotionResponse(chunkQueue, notionRequestBody, headers, notionApiUrl, notionCookie, timeoutId, isNewThread, contextInfo) {
   let responseReceived = false;
   let dom = null;
-  let threadIdFromResponse = null;
+  const { threadId, configId, contextId, contextDatetime } = contextInfo || {};
   
   try {
     // 创建JSDOM实例模拟浏览器环境
@@ -506,11 +539,6 @@ async function fetchNotionResponse(chunkQueue, notionRequestBody, headers, notio
 
             // 新格式: agent-inference，value 是数组
             if (jsonData?.type === "agent-inference" && Array.isArray(jsonData?.value)) {
-              // 保存 threadId（用于后续对话）- 优先使用 threadId
-              if (!threadIdFromResponse) {
-                threadIdFromResponse = jsonData.threadId || jsonData.id;
-              }
-
               // 保存 usage 数据（最后一个包含 finishedAt 的会有完整信息）
               if (jsonData.inputTokens !== undefined) {
                 usageData = {
@@ -618,19 +646,19 @@ async function fetchNotionResponse(chunkQueue, notionRequestBody, headers, notio
           chunkQueue.write(`data: ${JSON.stringify(noContentChunk)}\n\n`);
         }
 
-        // 追加 threadId 到响应末尾（隐藏格式，方便后续对话）
-        // 使用 notionRequestBody 中的 threadId（已有）或从响应中获取的 threadId
-        const finalThreadId = notionRequestBody.threadId || threadIdFromResponse;
-        if (finalThreadId) {
-          const threadIdChunk = new ChatCompletionChunk({
+        // 追加 thread context 到响应末尾（隐藏格式，方便后续对话）
+        // 格式: <!-- ntc:threadId|configId|contextId|datetime -->
+        if (threadId && configId && contextId && contextDatetime) {
+          const contextMarker = `${THREAD_CONTEXT_PREFIX}${threadId}|${configId}|${contextId}|${contextDatetime}${THREAD_CONTEXT_SUFFIX}`;
+          const contextChunk = new ChatCompletionChunk({
             choices: [
               new Choice({
-                delta: new ChoiceDelta({ content: `${THREAD_ID_PREFIX}${finalThreadId}${THREAD_ID_SUFFIX}` }),
+                delta: new ChoiceDelta({ content: contextMarker }),
                 finish_reason: null
               })
             ]
           });
-          chunkQueue.write(`data: ${JSON.stringify(threadIdChunk)}\n\n`);
+          chunkQueue.write(`data: ${JSON.stringify(contextChunk)}\n\n`);
         }
 
         // 创建结束块（包含 usage 信息）
