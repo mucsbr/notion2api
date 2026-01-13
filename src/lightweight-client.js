@@ -71,13 +71,71 @@ process.on('exit', () => {
   });
 });
 
-// ThreadId 标记格式（HTML 注释，大多数客户端不显示）
-// 格式: <!-- ntc:threadId|datetime -->
-const THREAD_CONTEXT_PREFIX = '\n\n<!-- ntc:';
-const THREAD_CONTEXT_SUFFIX = ' -->';
-const THREAD_CONTEXT_REGEX = /<!-- ntc:([^|]+)\|([^ ]+) -->/;
+// ThreadId 标记格式
+// 旧格式（HTML 注释，兼容）: <!-- ntc:threadId|datetime -->
+// 新格式（零宽字符，不可见）: 使用零宽字符编码 threadId|datetime
+const THREAD_CONTEXT_REGEX_OLD = /<!-- ntc:([^|]+)\|([^ ]+) -->/;
+
+// 零宽字符编码相关常量
+// 使用 4 种零宽字符表示四进制数字 (0-3)
+const ZERO_WIDTH_CHARS = [
+  '\u200B',  // 零宽空格 (ZWSP) = 0
+  '\u200C',  // 零宽非连接符 (ZWNJ) = 1
+  '\u200D',  // 零宽连接符 (ZWJ) = 2
+  '\uFEFF'   // 零宽非断空格 (BOM) = 3
+];
+const ZW_SEPARATOR = '\u2060';  // 字词连接符，作为字符分隔符
+const ZW_START_MARKER = '\u2060\u200B\u200B\u2060';  // 起始标记
+const ZW_END_MARKER = '\u2060\u200C\u200C\u2060';    // 结束标记
+
+// 将字符串编码为零宽字符
+function encodeToZeroWidth(str) {
+  const encoded = str.split('').map(char => {
+    const code = char.charCodeAt(0);
+    // 将字符码转为四进制，然后用零宽字符表示
+    const base4 = code.toString(4).padStart(4, '0');
+    return base4.split('').map(d => ZERO_WIDTH_CHARS[parseInt(d)]).join('');
+  }).join(ZW_SEPARATOR);
+  return ZW_START_MARKER + encoded + ZW_END_MARKER;
+}
+
+// 从零宽字符解码为字符串
+function decodeFromZeroWidth(encoded) {
+  // 找到起始和结束标记之间的内容
+  const startIdx = encoded.indexOf(ZW_START_MARKER);
+  const endIdx = encoded.indexOf(ZW_END_MARKER);
+  if (startIdx === -1 || endIdx === -1 || endIdx <= startIdx) return null;
+
+  const content = encoded.substring(startIdx + ZW_START_MARKER.length, endIdx);
+  if (!content) return null;
+
+  // 按分隔符分割，每组代表一个字符
+  const charGroups = content.split(ZW_SEPARATOR);
+
+  try {
+    const decoded = charGroups.map(group => {
+      // 将零宽字符转回四进制数字
+      const base4 = group.split('').map(zw => {
+        const idx = ZERO_WIDTH_CHARS.indexOf(zw);
+        if (idx === -1) throw new Error('Invalid zero-width char');
+        return idx.toString();
+      }).join('');
+      // 四进制转十进制，再转字符
+      return String.fromCharCode(parseInt(base4, 4));
+    }).join('');
+    return decoded;
+  } catch (e) {
+    return null;
+  }
+}
+
+// 检测字符串中是否包含零宽编码
+function containsZeroWidthEncoding(str) {
+  return str && str.includes(ZW_START_MARKER) && str.includes(ZW_END_MARKER);
+}
 
 // 从消息中提取 thread context (threadId, datetime)
+// 支持两种格式：零宽字符编码（新）和 HTML 注释（旧，兼容）
 function extractThreadContext(messages) {
   if (!messages || !Array.isArray(messages)) return null;
 
@@ -90,8 +148,25 @@ function extractThreadContext(messages) {
         content = content.map(p => p?.text || '').join('');
       }
       if (typeof content === 'string') {
-        const match = content.match(THREAD_CONTEXT_REGEX);
+        // 优先尝试零宽字符格式（新格式）
+        if (containsZeroWidthEncoding(content)) {
+          const decoded = decodeFromZeroWidth(content);
+          if (decoded) {
+            const parts = decoded.split('|');
+            if (parts.length === 2) {
+              logger.info(`从零宽字符解码出 thread context: ${decoded}`);
+              return {
+                threadId: parts[0],
+                datetime: parts[1]
+              };
+            }
+          }
+        }
+
+        // 回退到 HTML 注释格式（旧格式，兼容）
+        const match = content.match(THREAD_CONTEXT_REGEX_OLD);
         if (match) {
+          logger.info(`从 HTML 注释提取 thread context: ${match[1]}|${match[2]}`);
           return {
             threadId: match[1],
             datetime: match[2]
@@ -103,10 +178,23 @@ function extractThreadContext(messages) {
   return null;
 }
 
-// 从内容中移除 thread context 标记
+// 从内容中移除 thread context 标记（同时支持新旧两种格式）
 function stripThreadContext(content) {
   if (typeof content !== 'string') return content;
-  return content.replace(THREAD_CONTEXT_REGEX, '').trimEnd();
+
+  // 移除零宽字符格式（新格式）
+  if (containsZeroWidthEncoding(content)) {
+    const startIdx = content.indexOf(ZW_START_MARKER);
+    const endIdx = content.indexOf(ZW_END_MARKER);
+    if (startIdx !== -1 && endIdx !== -1) {
+      content = content.substring(0, startIdx) + content.substring(endIdx + ZW_END_MARKER.length);
+    }
+  }
+
+  // 移除 HTML 注释格式（旧格式）
+  content = content.replace(THREAD_CONTEXT_REGEX_OLD, '');
+
+  return content.trimEnd();
 }
 
 // 构建Notion请求
@@ -659,10 +747,11 @@ async function fetchNotionResponse(chunkQueue, notionRequestBody, headers, notio
           chunkQueue.write(`data: ${JSON.stringify(noContentChunk)}\n\n`);
         }
 
-        // 追加 thread context 到响应末尾（隐藏格式，方便后续对话）
-        // 格式: <!-- ntc:threadId|datetime -->
+        // 追加 thread context 到响应末尾（使用零宽字符编码，不可见）
+        // 格式: 零宽字符编码的 "threadId|datetime"
         if (threadId && contextDatetime) {
-          const contextMarker = `${THREAD_CONTEXT_PREFIX}${threadId}|${contextDatetime}${THREAD_CONTEXT_SUFFIX}`;
+          const contextData = `${threadId}|${contextDatetime}`;
+          const contextMarker = encodeToZeroWidth(contextData);
           const contextChunk = new ChatCompletionChunk({
             choices: [
               new Choice({
@@ -672,6 +761,7 @@ async function fetchNotionResponse(chunkQueue, notionRequestBody, headers, notio
             ]
           });
           chunkQueue.write(`data: ${JSON.stringify(contextChunk)}\n\n`);
+          logger.info(`已追加零宽字符编码的 thread context: ${contextData}`);
         }
 
         // 创建结束块（包含 usage 信息）
